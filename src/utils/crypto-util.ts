@@ -1,65 +1,86 @@
-import * as crypto from 'crypto';
+import * as CryptoJS from 'crypto-js';
 
-const ALGORITHM = 'aes-256-cbc';
-const SALT_LENGTH = 32;
-const IV_LENGTH = 16;
-const KEY_LENGTH = 32;
-const PBKDF2_ITERATIONS = 100_000;
 const SECRET_PASSWORD =
   'xA7r!29V#e6qWp$4D@fGzL0t!jYc*Pv9MhRu$Xn2bQsJ^KmCwTz&LdVo!rHgYb8Q';
 
-function deriveKey(salt: Buffer): Buffer {
-  return crypto.pbkdf2Sync(
-    SECRET_PASSWORD,
-    salt,
-    PBKDF2_ITERATIONS,
-    KEY_LENGTH,
-    'sha512',
-  );
-}
-
 export function encryptObject(obj: Record<string, any>): string {
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const salt = crypto.randomBytes(SALT_LENGTH);
-  const key = deriveKey(salt);
-
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  const start = Date.now();
   const json = JSON.stringify(obj);
-  const encrypted = Buffer.concat([
-    cipher.update(json, 'utf8'),
-    cipher.final(),
-  ]);
 
-  // Combine salt + iv + encrypted
-  const combined = Buffer.concat([salt, iv, encrypted]);
-  return combined.toString('base64'); // encode final output
+  // Generate random salt and IV
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const salt = CryptoJS.lib.WordArray.random(128 / 8); // 16 bytes
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const iv = CryptoJS.lib.WordArray.random(128 / 8); // 16 bytes
+
+  // Derive key using PBKDF2
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const key = CryptoJS.PBKDF2(SECRET_PASSWORD, salt, {
+    keySize: 256 / 32,
+    iterations: 10_000,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+    hasher: CryptoJS.algo.SHA512,
+  });
+
+  // Encrypt
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const encrypted = CryptoJS.AES.encrypt(json, key, {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    iv,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+    mode: CryptoJS.mode.CBC,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+    padding: CryptoJS.pad.Pkcs7,
+  });
+
+  // Return salt + iv + encrypted ciphertext in Base64
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const payload = CryptoJS.enc.Base64.stringify(
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+    salt.concat(iv).concat(encrypted.ciphertext),
+  );
+  const end = Date.now();
+  console.log('Took:', end - start, 'ms');
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  return payload;
 }
 
 export function decryptObject(encryptedBase64: string): Record<string, any> {
-  try {
-    const buffer = Buffer.from(encryptedBase64, 'base64');
+  const start = Date.now();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const payload = CryptoJS.enc.Base64.parse(encryptedBase64);
 
-    if (buffer.length < SALT_LENGTH + IV_LENGTH) {
-      throw new Error('Invalid input length');
-    }
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const salt = CryptoJS.lib.WordArray.create(payload.words.slice(0, 4)); // 16 bytes
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const iv = CryptoJS.lib.WordArray.create(payload.words.slice(4, 8)); // 16 bytes
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const ciphertext = CryptoJS.lib.WordArray.create(payload.words.slice(8));
 
-    const salt = buffer.subarray(0, SALT_LENGTH);
-    const iv = buffer.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
-    const encrypted = buffer.subarray(SALT_LENGTH + IV_LENGTH);
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const key = CryptoJS.PBKDF2(SECRET_PASSWORD, salt, {
+    keySize: 256 / 32,
+    iterations: 10_000,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+    hasher: CryptoJS.algo.SHA512,
+  });
 
-    const key = deriveKey(salt);
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const cipherParams = CryptoJS.lib.CipherParams.create({ ciphertext });
 
-    const decrypted = Buffer.concat([
-      decipher.update(encrypted),
-      decipher.final(),
-    ]);
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const decrypted = CryptoJS.AES.decrypt(
+    cipherParams,
+    key,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+    { iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 }
+  );
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return JSON.parse(decrypted.toString('utf8'));
-  } catch (err: any) {
-    console.error('❌ Decryption failed:', err);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    throw new Error('Decryption failed: ' + err.message);
-  }
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  const json = decrypted.toString(CryptoJS.enc.Utf8);
+  const end = Date.now();
+  console.log('Took:', end - start, 'ms');
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  return JSON.parse(json);
 }
